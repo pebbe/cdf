@@ -1,5 +1,9 @@
 #define _GNU_SOURCE // timegm
+
+#ifdef HAVE_CONFIG_H
 #include <config.h>
+#endif
+
 #include <assert.h>
 #include <math.h>
 #include <stdio.h>

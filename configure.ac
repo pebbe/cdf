@@ -11,8 +11,8 @@ AC_PROG_CC
 AC_PROG_CC_C99
 
 # Checks for libraries.
-AC_CHECK_LIB([m], [nan])
-AC_CHECK_LIB([netcdf], [nc_open])
+AC_CHECK_LIB([m], [nan],, [echo ERROR: Function nan is not available; exit 1])
+AC_CHECK_LIB([netcdf], [nc_open],, [echo ERROR: Library netcdf is not available; exit 1])
 
 # Checks for header files.
 
@@ -20,6 +20,7 @@ AC_CHECK_LIB([netcdf], [nc_open])
 AC_TYPE_SIZE_T
 
 # Checks for library functions.
+AC_CHECK_FUNC([timegm],,[echo ERROR: Function timegm is not available; exit 1])
 
 AC_CONFIG_FILES([
     Makefile
