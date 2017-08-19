@@ -20,7 +20,6 @@ AC_CHECK_LIB([netcdf], [nc_open],, [echo ERROR: Library netcdf is not available;
 AC_TYPE_SIZE_T
 
 # Checks for library functions.
-AC_CHECK_FUNC([timegm],,[echo ERROR: Function timegm is not available; exit 1])
 
 AC_CONFIG_FILES([
     Makefile

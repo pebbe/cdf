@@ -1,5 +1,3 @@
-#define _GNU_SOURCE // timegm
-
 #ifdef HAVE_CONFIG_H
 #include <config.h>
 #endif
@@ -120,16 +118,7 @@ int main(int argc, char **argv)
     double time[time_len];
     XX(nc_get_var_double(ncid, varid, time));
 
-    // aanname: dst voor lokale tijd op 1950-1-1 is gelijk aan die op 1970-1-1
-    struct tm ts = {
-        .tm_sec = 0,
-        .tm_min = 0,
-        .tm_hour = 0,
-        .tm_mday = 1,
-        .tm_mon = 0,
-        .tm_year = 50,
-        .tm_isdst = 0};
-    time_t tijd = timegm(&ts) + (time_t)(time[0]);
+    time_t tijd = (time_t)(time[0]) - 631152000;
     printf("Tijd (UTC)  : %s", asctime(gmtime(&tijd)));
     printf("Tijd (local): %s", asctime(localtime(&tijd)));
 
