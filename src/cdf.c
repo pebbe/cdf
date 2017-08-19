@@ -10,7 +10,7 @@
 
 #define XX(cmd)                           \
     {                                     \
-        int status = cmd;                 \
+        int status = (cmd);               \
         if (status)                       \
         {                                 \
             fprintf(stderr,               \
