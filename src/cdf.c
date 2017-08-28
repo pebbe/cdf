@@ -6,16 +6,9 @@
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <time.h>
+#include <string.h>
 
 #include <netcdf.h>
-
-typedef struct
-{
-    int rv;
-    size_t *dimlen;
-    double **values;
-} data_double;
 
 #define XXnc(cmd)                         \
     {                                     \
@@ -31,174 +24,201 @@ typedef struct
         }                                 \
     }
 
-#define XX(cmd)                          \
-    {                                    \
-        int status = (cmd);              \
-        if (status)                      \
-        {                                \
-            fprintf(stderr,              \
-                    "%s:%i: error %i\n", \
-                    __FILE__,            \
-                    __LINE__,            \
-                    status);             \
-            return 1;                    \
-        }                                \
-    }
-
-data_double cdf_get_double(int ncid, char *varname);
-
-void cdf_free_double(data_double data);
+int doDouble(int ncid, int varid, int ndims);
+int doString(int ncid, int varid, int ndims);
+char *quote(char *s);
 
 int main(int argc, char **argv)
 {
-
     assert(argc == 2);
 
     int ncid;
     XXnc(nc_open(argv[1], 0, &ncid));
 
-    //
-    // station name
-    //
-
-    int varid;
-    XXnc(nc_inq_varid(ncid, "stationname", &varid));
-
     int ndims;
-    XXnc(nc_inq_varndims(ncid, varid, &ndims));
+    XXnc(nc_inq_ndims(ncid, &ndims));
 
-    int station_dimids[ndims];
-    XXnc(nc_inq_vardimid(ncid, varid, station_dimids));
-
-    size_t stationnames_len;
-    XXnc(nc_inq_dimlen(ncid, station_dimids[0], &stationnames_len));
-
-    char *stationnames[stationnames_len];
-    XXnc(nc_get_var_string(ncid, varid, stationnames));
-
-    //
-    // minimum temp
-    //
-
-    data_double tmin = cdf_get_double(ncid, "tn");
-    XX(tmin.rv);
-
-    assert(tmin.dimlen[0] == stationnames_len);
-
-    //
-    // maximum temp
-    //
-
-    data_double tmax = cdf_get_double(ncid, "tx");
-    XX(tmax.rv);
-
-    assert(tmax.dimlen[0] == stationnames_len);
-
-    //
-    // uitvoer
-    //
-
-    for (size_t i = 0; i < stationnames_len; i++)
+    char dimnames[ndims][NC_MAX_NAME + 1];
+    size_t dimlens[ndims];
+    for (int i = 0; i < ndims; i++)
     {
-        double temp = nan("");
-        if (tmin.values[0][i] > -300 && tmax.values[0][i] > -300)
+        XXnc(nc_inq_dimname(ncid, i, dimnames[i]));
+        XXnc(nc_inq_dimlen(ncid, i, &dimlens[i]));
+    }
+    printf("{\n  \"dimensions\": {\n");
+    for (int i = 0; i < ndims; i++)
+    {
+        printf("    \"%s\": %lu%s\n", quote(dimnames[i]), dimlens[i], i == ndims - 1 ? "" : ",");
+    }
+    printf("  },\n  \"variables\": {");
+
+    int nvars;
+    for (nvars = 0;; nvars++)
+        if (nc_inq_varname(ncid, nvars, NULL))
+            break;
+
+    for (int varid = 0; varid < nvars; varid++)
+    {
+        char name[NC_MAX_NAME + 1];
+        nc_type xtype;
+        int ndims, natts;
+        XXnc(nc_inq_var(ncid, varid, name, &xtype, &ndims, NULL, &natts));
+
+        printf("%s\n    \"%s\": {", varid ? "," : "", quote(name));
+
+        for (int attnum = 0;; attnum++)
         {
-            temp = (tmin.values[0][i] + tmax.values[0][i]) / 2;
+            char name[NC_MAX_NAME + 1];
+            if (nc_inq_attname(ncid, varid, attnum, name))
+                break;
+            nc_type xtype;
+            XXnc(nc_inq_atttype(ncid, varid, name, &xtype));
+            printf("%s\n      \"%s\": ", attnum ? "," : "", quote(name));
+
+            if (xtype == NC_CHAR)
+            {
+                size_t len;
+                XXnc(nc_inq_attlen(ncid, varid, name, &len));
+                char v[len + 1];
+                v[len] = '\0';
+                XXnc(nc_get_att_text(ncid, varid, name, v));
+                printf("\"%s\"", quote(v));
+            }
+            else if (xtype == NC_DOUBLE)
+            {
+                double v;
+                XXnc(nc_get_att_double(ncid, varid, name, &v));
+                printf("%g", v);
+            }
+            else if (xtype == NC_FLOAT)
+            {
+                float v;
+                XXnc(nc_get_att_float(ncid, varid, name, &v));
+                printf("%g", v);
+            }
+            else
+            {
+                printf("null");
+            }
         }
-        printf("%2li:  %4.1f°C  %s\n", i + 1, temp, stationnames[i]);
+
+        if (xtype == NC_DOUBLE)
+        {
+            if (doDouble(ncid, varid, ndims))
+                return 1;
+        }
+        else if (xtype == NC_STRING)
+        {
+            if (doString(ncid, varid, ndims))
+                return 1;
+        }
+
+        printf("\n    }");
     }
-
-    //
-    // time
-    //
-
-    data_double time = cdf_get_double(ncid, "time");
-    XX(time.rv);
-
-    time_t tijd = (time_t)(time.values[0][0]) - 631152000;
-    printf("Tijd (UTC)  : %s", asctime(gmtime(&tijd)));
-    printf("Tijd (local): %s", asctime(localtime(&tijd)));
-
-    //
-    // clean up
-    //
-
-    XXnc(nc_close(ncid));
-
-    cdf_free_double(tmin);
-    cdf_free_double(tmax);
-    cdf_free_double(time);
-    for (size_t i = 0; i < stationnames_len; i++)
-    {
-        free(stationnames[i]);
-    }
+    printf("\n  }\n}\n");
 }
 
-data_double cdf_get_double(int ncid, char *varname)
+int doDouble(int ncid, int varid, int ndims)
 {
+    if (ndims < 1 || ndims > 2)
+        return 1;
 
-#define XXresult(cmd)                        \
-    {                                        \
-        result.rv = cmd;                     \
-        if (result.rv)                       \
-        {                                    \
-            fprintf(stderr,                  \
-                    "%s:%i: error: %s\n",    \
-                    __FILE__,                \
-                    __LINE__,                \
-                    nc_strerror(result.rv)); \
-            return result;                   \
-        }                                    \
-    }
-
-#define XXmalloc(var, cmd)                    \
-    {                                         \
-        var = cmd;                            \
-        if (!var)                             \
-        {                                     \
-            fprintf(stderr,                   \
-                    "%s:%i: malloc failed\n", \
-                    __FILE__,                 \
-                    __LINE__);                \
-            result.rv = -1;                   \
-            return result;                    \
-        }                                     \
-    }
-
-    data_double result;
-
-    int varid;
-    XXresult(nc_inq_varid(ncid, varname, &varid));
-
-    int ndims;
-    XXresult(nc_inq_varndims(ncid, varid, &ndims));
-
-    int dimids[ndims];
-    XXresult(nc_inq_vardimid(ncid, varid, dimids));
-
-    // twee dimensies gebruiken
-    // als één, dan lengte 2e dimensie is 1
-    // als meer dan twee, dan twee
-    XXmalloc(result.dimlen, (size_t *)malloc((ndims < 2 ? 2 : ndims) * sizeof(size_t)))
-        result.dimlen[1] = 1;
-    for (int i = 0; i < ndims && i < 2; i++)
-        XXresult(nc_inq_dimlen(ncid, dimids[i], &(result.dimlen[i])));
-
-    XXmalloc(result.values, (double **)malloc(result.dimlen[1] * sizeof(double *)));
-    for (int i = 0; i < result.dimlen[1]; i++)
+    if (ndims == 1)
     {
-        XXmalloc(result.values[i], (double *)malloc(result.dimlen[0] * sizeof(double)));
-        XXresult(nc_get_var_double(ncid, varid, result.values[i]));
+        int dimids[1];
+        XXnc(nc_inq_vardimid(ncid, varid, dimids));
+
+        size_t dimlen;
+        XXnc(nc_inq_dimlen(ncid, dimids[0], &dimlen));
+
+        double v[dimlen];
+        XXnc(nc_get_var_double(ncid, varid, v));
+
+        printf(",\n      \"values\": [");
+        for (int i = 0; i < dimlen; i++)
+        {
+            long int li = v[i];
+            if (v[i] - li)
+                printf("%s\n        %g", i ? "," : "", v[i]);
+            else
+                printf("%s\n        %li", i ? "," : "", li);
+        }
+        printf("\n      ]");
+
+        return 0;
     }
-    return result;
+
+    int dimids[2];
+    XXnc(nc_inq_vardimid(ncid, varid, dimids));
+
+    size_t dimlen[2];
+    for (int i = 0; i < 2; i++)
+        XXnc(nc_inq_dimlen(ncid, dimids[i], &dimlen[i]));
+
+    double v[dimlen[0]][dimlen[1]];
+    XXnc(nc_get_var_double(ncid, varid, &(v[0][0])));
+
+    printf(",\n      \"values\": [");
+    for (int j = 0; j < dimlen[1]; j++)
+    {
+        if (dimlen[1] > 1) 
+            printf("%s\n        [", j ? "," : "");
+        for (int i = 0; i < dimlen[0]; i++)
+        {
+            long int li = v[i][j];
+            if (v[i][j] - li)
+                printf("%s\n          %g", i ? "," : "", v[i][j]);
+            else
+                printf("%s\n          %li", i ? "," : "", li);
+        }
+        if (dimlen[1] > 1)
+            printf("\n        ]");
+    }
+    printf("\n      ]");
+
+    return 0;
 }
 
-void cdf_free_double(data_double data)
+int doString(int ncid, int varid, int ndims)
 {
-    for (int i = 0; i < data.dimlen[1]; i++)
+    if (ndims != 1)
+        return 1;
+
+    int dimids[1];
+    XXnc(nc_inq_vardimid(ncid, varid, dimids));
+
+    size_t dimlen;
+    XXnc(nc_inq_dimlen(ncid, dimids[0], &dimlen));
+
+    char *v[dimlen];
+    XXnc(nc_get_var_string(ncid, varid, v));
+
+    printf(",\n      \"values\": [");
+    for (int i = 0; i < dimlen; i++)
     {
-        free(data.values[i]);
+        printf("%s\n        \"%s\"", i ? "," : "", quote(v[i]));
     }
-    free(data.values);
-    free(data.dimlen);
+    printf("\n      ]");
+    return 0;
+}
+
+char *quote(char *s)
+{
+    char *s2 = (char *)malloc(1 + 2 * strlen(s));
+    assert(s2);
+    int j = 0;
+    for (int i = 0; s[i]; i++)
+    {
+        if (s[i] == '\n')
+        {
+            s[j++] = '\\';
+            s[j++] = 'n';
+            continue;
+        }
+        if (s[i] == '"' || s[i] == '\\')
+            s2[j++] = '\\';
+        s2[j++] = s[i];
+    }
+    s2[j] = '\0';
+    return s2;
 }
