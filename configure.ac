@@ -2,7 +2,7 @@
 # Process this file with autoconf to produce a configure script.
 
 AC_PREREQ([2.69])
-AC_INIT([cdf], [0.1.1], [kleiweg@ziggo.nl])
+AC_INIT([cdf], [0.1.2], [kleiweg@ziggo.nl])
 AC_CONFIG_HEADERS([config.h])
 
 # Checks for programs.
