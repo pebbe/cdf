@@ -74,7 +74,6 @@ int main(int argc, char **argv) {
                 v[len] = '\0';
                 XXnc(nc_get_att_text(ncid, varid, name, v));
                 printf("\"%s\"", quote(v));
-
             } else if (xtype == NC_STRING) {
                 size_t len;
                 XXnc(nc_inq_attlen(ncid, varid, name, &len));
