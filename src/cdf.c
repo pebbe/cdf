@@ -196,6 +196,9 @@ int doString(int ncid, int varid, int ndims) {
     for (int i = 0; i < dimlen; i++) {
         printf("%s\n        \"%s\"", i ? "," : "", quote(v[i]));
     }
+
+    XXnc(nc_free_string(dimlen, v));
+
     printf("\n      ]");
     return 0;
 }
